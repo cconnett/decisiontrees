@@ -18,9 +18,9 @@ from typing import (
     Tuple,
 )
 
-ROWS = 8
-COLS = 8
-K = 1
+ROWS = 5
+COLS = 5
+K = 2
 
 
 class Coordinate(NamedTuple):
@@ -88,7 +88,12 @@ class Node(NamedTuple):
   # oneof {
   leaf_board: Board
   children: Mapping[Outcome, 'Node']
+
   # }
+
+  def __repr__(self):
+    return (f'{self.shot_taken}: {len(self.universe)} → ' +
+            f'{[len(s.universe) for s in self.children.values()]}')
 
 
 def ExpandNode(n: Node, attr: Attribute) -> Node:
@@ -100,7 +105,7 @@ def ExpandNode(n: Node, attr: Attribute) -> Node:
     return n._replace(
         shot_taken=attr,
         children=None,
-        leaf_board=next(itertools.chain.from_iterable(splits)),
+        leaf_board=next(itertools.chain.from_iterable(splits.values())),
     )
   return n._replace(
       shot_taken=attr,
@@ -130,7 +135,9 @@ def EntropyK(n: Node, attributes: Set[Attribute], cur_attr: Attribute, k: int):
     return TotalEntropy(n)
 
   expanded_node = ExpandNode(n, cur_attr)
-  weighted_sum = 0
+  if expanded_node.leaf_board:
+    return 0.0
+  weighted_sum = 0.0
   for subnode in expanded_node.children.values():
     weighted_sum += (
         len(subnode.universe) / len(n.universe) * min(
@@ -143,13 +150,17 @@ def ExpandTree(root: Node, attributes: Set[Attribute]):
   best_attr = min(attributes, key=lambda a: EntropyK(root, attributes, a, K))
   new_root = ExpandNode(root, best_attr)
   attributes_prime = attributes - {best_attr}
-  return new_root._replace(children={
-      v: ExpandTree(n, attributes_prime) for v, n in new_root.children.items()
-  })
+  if new_root.children:
+    new_root = new_root._replace(children={
+        v: ExpandTree(n, attributes_prime)
+        for v, n in new_root.children.items()
+    })
+  return new_root
 
 
 def main(_):
   domain = {Coordinate(i, j) for i in range(ROWS) for j in range(COLS)}
+  # pickle.dump(list(GetAllBoards()), open('boards', 'wb'))
   b = pickle.load(open('boards', 'rb'))
   t = Node(None, None, b, None, None)
   e = ExpandTree(t, domain)
