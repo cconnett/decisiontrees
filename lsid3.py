@@ -82,6 +82,7 @@ def Test(board, coord) -> Outcome:
 
 
 class Node(NamedTuple):
+  """A decision tree node."""
   shot_taken: Optional[Coordinate]
   parent: Optional['Node']
   universe: Universe
@@ -91,9 +92,14 @@ class Node(NamedTuple):
 
   # }
 
-  def __repr__(self):
+  def String(self, depth=1):
+    if depth <= 0:
+      return str(len(self.universe))
     return (f'{self.shot_taken}: {len(self.universe)} → ' +
-            f'{[len(s.universe) for s in self.children.values()]}')
+            f'[{", ".join(s.String(depth-1) for s in self.children.values())}]')
+
+  def __str__(self):
+    return self.String(2)
 
 
 def ExpandNode(n: Node, attr: Attribute) -> Node:
