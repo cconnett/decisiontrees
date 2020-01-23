@@ -81,51 +81,54 @@ def Test(board, coord) -> Outcome:
   return Outcome.HIT  # TODO(cjc): Detect SINK.
 
 
-class Node(NamedTuple):
+class Node(object):
   """A decision tree node."""
-  shot_taken: Optional[Coordinate]
+  attribute: Optional[Coordinate]
   parent: Optional['Node']
   universe: Universe
   # oneof {
-  leaf_board: Board
+  leaf: Board
   children: Mapping[Outcome, 'Node']
 
   # }
 
+  def __init__(self, attr, par, uni, leaf, childs):
+    self.attribute = attr
+    self.parent = par
+    self.universe = uni
+    self.leaf = leaf
+    self.children = childs
+
   def String(self, depth=1):
     if depth <= 0:
       return str(len(self.universe))
-    return (f'{self.shot_taken}: {len(self.universe)} → ' +
+    return (f'{self.attribute}: {len(self.universe)} → ' +
             f'[{", ".join(s.String(depth-1) for s in self.children.values())}]')
 
   def __str__(self):
     return self.String(2)
 
 
-def ExpandNode(n: Node, attr: Attribute) -> Node:
-  """Return node `n` expanded by splitting on `attr`."""
+def ExpandNode(n: Node, attr: Attribute) -> None:
+  """Expand node `n` in-place by splitting on `attr`."""
   splits = collections.defaultdict(list)
   for element in n.universe:
     splits[Test(element, attr)].append(element)
+  n.attribute = attr
   if sum(bool(s) for s in splits) == 1:
-    return n._replace(
-        shot_taken=attr,
-        children=None,
-        leaf_board=next(itertools.chain.from_iterable(splits.values())),
-    )
-  return n._replace(
-      shot_taken=attr,
-      children={
-          outcome: Node(None, n, split, None, None)
-          for outcome, split in splits.items()
-      },
-      leaf_board=None,
-  )
+    n.children = None
+    n.leaf = next(itertools.chain.from_iterable(splits.values()))
+  else:
+    n.children = {
+        outcome: Node(None, n, split, None, None)
+        for outcome, split in splits.items()
+    }
+    n.leaf = None
 
 
 def TotalEntropy(n: Node) -> float:
   """Return the entropy among the `children` of `n`."""
-  if n.leaf_board:
+  if n.leaf:
     return 0.0
   return -(math.log2(1 / len(n.universe)) * len(n.universe))
 
@@ -140,11 +143,11 @@ def EntropyK(n: Node, attributes: Set[Attribute], cur_attr: Attribute, k: int):
   if k == 0:
     return TotalEntropy(n)
 
-  expanded_node = ExpandNode(n, cur_attr)
-  if expanded_node.leaf_board:
+  ExpandNode(n, cur_attr)
+  if n.leaf:
     return 0.0
   weighted_sum = 0.0
-  for subnode in expanded_node.children.values():
+  for subnode in n.children.values():
     weighted_sum += (
         len(subnode.universe) / len(n.universe) * min(
             EntropyK(subnode, attributes - {next_attr}, next_attr, k - 1)
@@ -153,15 +156,12 @@ def EntropyK(n: Node, attributes: Set[Attribute], cur_attr: Attribute, k: int):
 
 
 def ExpandTree(root: Node, attributes: Set[Attribute]):
-  best_attr = min(attributes, key=lambda a: EntropyK(root, attributes, a, K))
-  new_root = ExpandNode(root, best_attr)
-  attributes_prime = attributes - {best_attr}
-  if new_root.children:
-    new_root = new_root._replace(children={
-        v: ExpandTree(n, attributes_prime)
-        for v, n in new_root.children.items()
-    })
-  return new_root
+  best_attr = max(attributes, key=lambda a: GainK(root, attributes, a, K))
+  ExpandNode(root, best_attr)
+  if root.children:
+    attributes_prime = attributes - {best_attr}
+    for n in root.children.values():
+      ExpandTree(n, attributes_prime)
 
 
 def main(_):
@@ -169,8 +169,8 @@ def main(_):
   # pickle.dump(list(GetAllBoards()), open('boards', 'wb'))
   b = pickle.load(open('boards', 'rb'))
   t = Node(None, None, b, None, None)
-  e = ExpandTree(t, domain)
-  print(e)
+  ExpandTree(t, domain)
+  print(t)
 
 
 # def ChooseAttribute(node: Node):
